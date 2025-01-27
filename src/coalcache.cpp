@@ -204,6 +204,7 @@ void CoalCache::send_coalesced() {
                     if (!failed)
                         lock.lock();
 
+                    size_t calls = 0;
                     auto now = std::chrono::steady_clock::now();
                     for (size_t i = 0; i < keys.size(); i++) {
                         const auto& value = resp[i];
@@ -238,11 +239,14 @@ void CoalCache::send_coalesced() {
                             }
                         }
 
+                        calls += callbacks.size();
                         for (auto& cb : callbacks)
                             cb(loaded);
 
                         q_sent.erase(it);
                     }
+
+                    log::info(cat, "Coalesced {} getSignatureStatuses calls", calls);
                 });
             });
 
