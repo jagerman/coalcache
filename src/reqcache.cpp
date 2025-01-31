@@ -64,9 +64,11 @@ void ReqCache::lookup(nlohmann::json jsonrpc, item_callback cb, std::string_view
                                status,
                                headers = std::move(headers),
                                body = std::move(body)] {
-                        bool failed = status < 200 || status >= 300;
                         nlohmann::json resp;
-                        if (!failed) {
+                        bool failed = status < 200 || status >= 300;
+                        if (failed) {
+                            log::error(cat, "Request failed with status {}:\n{}", status, body);
+                        } else {
                             try {
                                 resp = nlohmann::json::parse(body);
                             } catch (const std::exception& e) {
