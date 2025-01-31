@@ -14,14 +14,6 @@ namespace solcache {
 namespace log = oxen::log;
 static auto cat = log::Cat("coalcache");
 
-CoalCache::key CoalCache::key::load(std::string_view x) {
-    key k;
-    if (x.size() != k.size())
-        throw std::invalid_argument{"Invalid key size; expected 88 chars"};
-    std::memcpy(k.data(), x.data(), 88);
-    return k;
-}
-
 void CoalCache::item::load(const nlohmann::json& value) {
     if (value.is_null()) {
         conf_status = sig_conf_status::null;
@@ -90,7 +82,7 @@ void CoalCache::clean_cache() {
     log::debug(cat, "Cleaned {} cache items", before - cache.size());
 }
 
-void CoalCache::lookup(const key& k, item_callback cb) {
+void CoalCache::lookup(const std::string& k, item_callback cb) {
     {
         std::lock_guard lock{cache_mut};
         if (auto it = cache.find(k); it != cache.end()) {
@@ -100,7 +92,7 @@ void CoalCache::lookup(const key& k, item_callback cb) {
     }
 
     loop.call([this, k, cb = std::move(cb)]() mutable {
-        log::info(cat, "initiating CoalCache lookup for {}", k.view());
+        log::info(cat, "initiating CoalCache lookup for {}", k);
         if (auto it = q_sent.find(k); it != q_sent.end()) {
             it->second.push_back(std::move(cb));
             return;
@@ -132,7 +124,7 @@ void CoalCache::send_coalesced() {
 
     // Drain q_coalescing: copy all the callbacks into q_sent, and make a local vector of all the
     // keys so that we can match up response items to the ones we requested.
-    std::vector<key> keys;
+    std::vector<std::string> keys;
     const size_t q_size = std::min(q_coalescing.size(), max_coalesce);
     keys.reserve(q_size);
     for (auto it = q_coalescing.begin(); it != q_coalescing.end() && keys.size() < q_size;) {
@@ -150,7 +142,7 @@ void CoalCache::send_coalesced() {
     auto& params = (req["params"] = nlohmann::json::array());
     auto& sigs = params.emplace_back(nlohmann::json::array());
     for (const auto& k : keys)
-        sigs.emplace_back(k.view());
+        sigs.emplace_back(k);
 
     params.push_back(nlohmann::json{{"searchTransactionHistory", true}});
 

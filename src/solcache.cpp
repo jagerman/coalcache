@@ -125,7 +125,7 @@ int main(int argc, char** argv) {
                         collection->values.resize(keys.size());
                         for (size_t i = 0; i < keys.size(); i++) {
                             coalcache.lookup(
-                                    CoalCache::key::load(keys[i]),
+                                    keys[i],
                                     [res, i, id = std::move(id), &server, collection](
                                             const CoalCache::item* item) {
                                         if (collection->remaining <= 0)

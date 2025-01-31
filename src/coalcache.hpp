@@ -27,10 +27,6 @@ constexpr std::string_view to_string(sig_conf_status s) {
 /// Cache and coalescer of getSignatureStatuses requests.
 class CoalCache {
   public:
-    struct key : std::array<char, 88> {
-        std::string_view view() const { return {data(), size()}; }
-        static key load(std::string_view x);
-    };
     struct item {
         sig_conf_status conf_status;
         std::string context_api_version;
@@ -66,9 +62,6 @@ class CoalCache {
                                 : nlohmann::json{{"Ok", nullptr}}}};
         }
     };
-    struct hasher {
-        size_t operator()(const key& h) const { return std::hash<std::string_view>{}(h.view()); }
-    };
 
     // Callback used when the result is available.  Returns a nullptr if the upstream request failed
     // completely (note that this is different from a not-found result, which will be an item with
@@ -83,7 +76,7 @@ class CoalCache {
     const std::chrono::milliseconds positive_cache_time;
     const std::chrono::milliseconds negative_cache_time;
     const size_t max_coalesce;
-    std::unordered_map<key, item, hasher> cache;
+    std::unordered_map<std::string, item> cache;
     mutable std::mutex cache_mut;
 
     void clean_cache();
@@ -91,8 +84,8 @@ class CoalCache {
     std::shared_ptr<oxen::quic::Ticker> cache_clean_timer;
 
     // These are not explicitly mutex protected, but may only be touched inside the loop thread:
-    std::unordered_map<key, std::list<item_callback>, hasher> q_coalescing;
-    std::unordered_map<key, std::list<item_callback>, hasher> q_sent;
+    std::unordered_map<std::string, std::list<item_callback>> q_coalescing;
+    std::unordered_map<std::string, std::list<item_callback>> q_sent;
     int q_num = 0;
 
   public:
@@ -134,7 +127,7 @@ class CoalCache {
     // and will be invoked when the result comes back from the next coalesced call.  Results will be
     // nullopt if we got a `null` from the server for that item (which generally indicates a "not
     // found").
-    void lookup(const key& k, item_callback cb);
+    void lookup(const std::string& k, item_callback cb);
 
     // Called automatically to send off the current queue according to the construction parameters,
     // but can also be called manually if desired.
