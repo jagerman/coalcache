@@ -37,7 +37,10 @@ void ReqCache::lookup(nlohmann::json jsonrpc, item_callback cb, std::string_view
     std::string body = jsonrpc.dump();
     auto cache_key = hash(body, domain);
 
-    loop.call([this, body = std::move(body), cache_key, cb = std::move(cb)]() mutable {
+    loop.call([this,
+               body = std::move(body),
+               cache_key = std::move(cache_key),
+               cb = std::move(cb)]() mutable {
         auto& item = cache[cache_key];
         if (!item._pending) {
             cb(&item);
@@ -51,12 +54,12 @@ void ReqCache::lookup(nlohmann::json jsonrpc, item_callback cb, std::string_view
 
         client.request_jsonrpc(
                 std::move(body),
-                [this, cache_key](
+                [this, cache_key = std::move(cache_key)](
                         int status,
                         std::unordered_map<std::string, std::string> headers,
-                        std::string body) {
+                        std::string body) mutable {
                     loop.call([this,
-                               cache_key,
+                               cache_key = std::move(cache_key),
                                status,
                                headers = std::move(headers),
                                body = std::move(body)] {
@@ -106,10 +109,11 @@ void ReqCache::de_id(nlohmann::json& json_rpc) {
     json_rpc["id"] = 0;
 }
 
-hash32 ReqCache::hash(std::string_view body, std::string_view key) {
-    hash32 out;
+std::string ReqCache::hash(std::string_view body, std::string_view key) {
+    std::string out;
+    out.resize(32);
     crypto_generichash_blake2b(
-            out.data(),
+            reinterpret_cast<unsigned char*>(out.data()),
             out.size(),
             reinterpret_cast<const unsigned char*>(body.data()),
             body.size(),

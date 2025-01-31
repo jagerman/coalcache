@@ -9,8 +9,6 @@
 
 #include "client.hpp"
 
-struct alignas(size_t) hash32 : std::array<unsigned char, 32> {};
-
 namespace solcache {
 
 /// Cache of upstream requests.
@@ -33,17 +31,11 @@ class ReqCache {
         std::list<item_callback> _callbacks;
     };
 
-    struct hasher {
-        size_t operator()(const hash32& h) const {
-            return *reinterpret_cast<const size_t*>(h.data());
-        }
-    };
-
   private:
     Client& client;
     oxen::quic::Loop& loop{client.loop};
 
-    std::unordered_map<hash32, item, hasher> cache;
+    std::unordered_map<std::string, item> cache;
 
     const std::chrono::milliseconds cache_expiry;
 
@@ -64,7 +56,7 @@ class ReqCache {
     // Replaces the id value with integer 0, so that it is suitable for hashing.
     static void de_id(nlohmann::json& json_rpc);
 
-    static hash32 hash(std::string_view body, std::string_view key = "");
+    static std::string hash(std::string_view body, std::string_view key = "");
 };
 
 }  // namespace solcache
