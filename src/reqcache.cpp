@@ -51,6 +51,7 @@ void ReqCache::lookup(nlohmann::json jsonrpc, item_callback cb, std::string_view
 
         if (item._sent)
             return;
+        item._sent = true;
 
         client.request_jsonrpc(
                 std::move(body),
