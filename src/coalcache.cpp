@@ -114,7 +114,7 @@ void CoalCache::lookup(const std::string& k, item_callback cb) {
 }
 
 void CoalCache::send_coalesced() {
-    if (!loop.in_event_loop()) {
+    if (!loop.inside()) {
         loop.call_soon([this] { send_coalesced(); });
         return;
     }

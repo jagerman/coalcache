@@ -17,7 +17,7 @@ ReqCache::ReqCache(Client& c, std::chrono::milliseconds cache_expiry) :
         cache_clean_timer{loop.call_every(1s, [this] { clean_cache(); })} {}
 
 void ReqCache::clean_cache() {
-    assert(loop.in_event_loop());
+    assert(loop.inside());
 
     auto before = cache.size();
     log::debug(cat, "Cleaning ReqCache cache");

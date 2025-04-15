@@ -35,7 +35,7 @@ namespace {
 Client::Client(std::string upstream_url, std::chrono::milliseconds upstream_timeout) :
         upstream_url{std::move(upstream_url)},
         upstream_timeout{upstream_timeout},
-        ev_timeout{evtimer_new(loop.loop().get(), Client::on_timeout_c, this)} {
+        ev_timeout{evtimer_new(loop.get_event_base(), Client::on_timeout_c, this)} {
 
     curl_multi = curl_multi_init();
     curl_multi_setopt(curl_multi, CURLMOPT_SOCKETDATA, this);
@@ -68,7 +68,7 @@ struct curl_context {
     curl_context(Client& client, curl_socket_t fd) :
             client{client},
             sockfd{fd},
-            evt{event_new(client.loop.loop().get(), sockfd, 0, Client::curl_perform_c, this)} {}
+            evt{event_new(client.loop.get_event_base(), sockfd, 0, Client::curl_perform_c, this)} {}
     ~curl_context() {
         event_del(evt);
         event_free(evt);
@@ -141,7 +141,7 @@ int Client::handle_socket_c(
             event_del(curl_ctx->evt);
             event_assign(
                     curl_ctx->evt,
-                    client.loop.loop().get(),
+                    client.loop.get_event_base(),
                     curl_ctx->sockfd,
                     events,
                     Client::curl_perform_c,

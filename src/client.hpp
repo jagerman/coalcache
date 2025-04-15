@@ -1,11 +1,13 @@
 #pragma once
 
 #include <curl/curl.h>
+#include <event2/event.h>
 
 #include <chrono>
 #include <memory>
 #include <nlohmann/json_fwd.hpp>
 #include <oxen/quic/loop.hpp>
+#include <unordered_set>
 
 using namespace std::literals;
 
