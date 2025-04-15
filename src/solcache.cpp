@@ -74,7 +74,7 @@ int main(int argc, char** argv) {
     Server server{
             listen_ip,
             listen_port,
-            [&client, &coalcache, &reqcache, &server](req_data&& req, HttpResponse* res) {
+            [&coalcache, &reqcache, &server](req_data&& req, HttpResponse* res) {
                 log::debug(cat, "request!");
                 auto ct = req.content_type();
                 if (!ct || *ct != "application/json") {
