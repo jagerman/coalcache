@@ -50,6 +50,7 @@ void Server::run() {
         log::debug(cat, "Incoming request initiated for {} from {}", rd->full_url, rd->remote_addr);
         res->onAborted([rd] { rd->_aborted = true; });
         res->onData([this, res, rd = std::move(rd)](std::string_view chunk, bool fin) mutable {
+            log::debug(cat, "Incoming {} chunk of size {}, rd {}", fin ? "final" : "non-final", chunk.size(), rd ? "good" : "EMPTY");
             if (!chunk.empty())
                 rd->body += chunk;
 
