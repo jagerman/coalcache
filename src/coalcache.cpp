@@ -158,7 +158,6 @@ void CoalCache::send_coalesced() {
                            body = std::move(body),
                            keys = std::move(keys)] {
                     bool failed = status < 200 || status >= 300;
-                    std::string ctx_api;
                     int64_t ctx_slot;
                     nlohmann::json resp;
                     if (!failed) {
@@ -171,7 +170,6 @@ void CoalCache::send_coalesced() {
                                         "jsonrpc request returned an error: {}"_format(it->dump())};
                             resp = resp.at("result");
                             auto& ctx = resp.at("context");
-                            ctx_api = ctx.at("apiVersion").get<std::string>();
                             ctx_slot = ctx.at("slot").get<int64_t>();
                             resp = resp.at("value");
                             if (!resp.is_array())
@@ -214,7 +212,6 @@ void CoalCache::send_coalesced() {
                         if (!failed) {
                             try {
                                 x.load(value);
-                                x.context_api_version = ctx_api;
                                 x.context_slot = ctx_slot;
                                 x.expiry = now + (x ? negative_cache_time : positive_cache_time);
                                 if (x.expiry > now)

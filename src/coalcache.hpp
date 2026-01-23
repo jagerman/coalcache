@@ -29,7 +29,6 @@ class CoalCache {
   public:
     struct item {
         sig_conf_status conf_status;
-        std::string context_api_version;
         int64_t context_slot;
         std::optional<int64_t> confirmations;
         std::optional<int64_t> err_code;

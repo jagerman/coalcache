@@ -151,9 +151,7 @@ int main(int argc, char** argv) {
                                                 {"result",
                                                  {
                                                          {"context",
-                                                          {{"apiVersion",
-                                                            item->context_api_version},
-                                                           {"slot", item->context_slot}}},
+                                                          {{"slot", item->context_slot}}},
                                                  }}};
                                         auto& values = resp["result"]["value"];
                                         values = nlohmann::json::array();
