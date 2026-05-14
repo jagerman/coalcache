@@ -64,9 +64,7 @@ find_package(nlohmann_json REQUIRED)
 add_subdirectory(CLI11)
 
 set(FORCE_OXENC_SUBMODULE ON CACHE BOOL "")
-add_subdirectory(oxen-libquic)
-
-oxen_logging_add_source_dir("${PROJECT_SOURCE_DIR}/src")
+add_subdirectory(libquic)
 
 pkg_check_modules(SODIUM REQUIRED IMPORTED_TARGET libsodium)
 
