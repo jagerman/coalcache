@@ -74,13 +74,13 @@ int main(int argc, char** argv) {
     Server server{
             listen_ip,
             listen_port,
-            [&coalcache, &reqcache, &server](req_data&& req, HttpResponse* res) {
+            [&coalcache, &reqcache, &server](std::shared_ptr<req_data> rd) {
                 log::debug(cat, "request!");
-                auto ct = req.content_type();
+                auto ct = rd->content_type();
                 if (!ct || *ct != "application/json") {
                     log::warning(cat, "Invalid {} request", ct.value_or("no-content-type"));
                     server.send_response(
-                            res,
+                            rd,
                             "Invalid request: this server only accepts application/json requests",
                             {},
                             "400 Bad Request");
@@ -90,7 +90,7 @@ int main(int argc, char** argv) {
                 nlohmann::json jreq, id;
                 std::string method;
                 try {
-                    jreq = nlohmann::json::parse(req.body);
+                    jreq = nlohmann::json::parse(rd->body);
 
                     if (auto jsonrpc = jreq.at("jsonrpc").get<std::string_view>(); jsonrpc != "2.0")
                         throw std::invalid_argument{
@@ -102,9 +102,9 @@ int main(int argc, char** argv) {
                             cat,
                             "Malformed jsonrpc request: {}. Request was:\n{}",
                             e.what(),
-                            req.body);
+                            rd->body);
                     server.send_response(
-                            res,
+                            rd,
                             "Invalid request: json request body is malformed or is not a valid "
                             "jsonrpc request",
                             {},
@@ -116,38 +116,52 @@ int main(int argc, char** argv) {
                     log::info(cat, "jsonrpc request for {}", method);
                     if (method == "getSignatureStatuses") {
                         struct collected {
-                            int remaining;
+                            std::atomic<int> remaining;
+                            // Set true by whichever callback dispatches the response, so that we
+                            // dispatch exactly one response even if a later callback would also
+                            // satisfy the "done" condition.
+                            std::atomic<bool> sent = false;
                             std::vector<nlohmann::json> values;
+                            nlohmann::json id;
                         };
                         auto keys = jreq.at("params").at(0).get<std::vector<std::string>>();
                         auto collection = std::make_shared<collected>();
                         collection->remaining = keys.size();
                         collection->values.resize(keys.size());
+                        collection->id = std::move(id);
                         for (size_t i = 0; i < keys.size(); i++) {
                             coalcache.lookup(
                                     keys[i],
-                                    [res, i, id = std::move(id), &server, collection](
+                                    [rd, i, &server, collection](
                                             const CoalCache::item* item) {
-                                        if (collection->remaining <= 0)
-                                            return;  // Someone else already sent an error
+                                        if (collection->sent.load(std::memory_order_relaxed))
+                                            return;  // already finalized
                                         if (!item) {
+                                            bool expected = false;
+                                            if (!collection->sent.compare_exchange_strong(
+                                                        expected, true))
+                                                return;
                                             server.send_response(
-                                                    res,
+                                                    rd,
                                                     "Unable to process request: upstream RPC "
                                                     "provider returned an error",
                                                     {},
                                                     "502 Bad Gateway");
-                                            collection->remaining = 0;
                                             return;
                                         }
 
                                         collection->values[i] = item->json();
-                                        if (--collection->remaining > 0)
+                                        if (collection->remaining.fetch_sub(1) > 1)
                                             return;  // More results to go
+
+                                        bool expected = false;
+                                        if (!collection->sent.compare_exchange_strong(
+                                                    expected, true))
+                                            return;
 
                                         nlohmann::json resp{
                                                 {"jsonrpc", "2.0"},
-                                                {"id", id},
+                                                {"id", collection->id},
                                                 {"result",
                                                  {
                                                          {"context",
@@ -158,17 +172,17 @@ int main(int argc, char** argv) {
                                         for (auto& v : collection->values)
                                             values.push_back(std::move(v));
 
-                                        server.send_json_response(res, std::move(resp));
+                                        server.send_json_response(rd, std::move(resp));
                                     });
                         }
                         return;
                     } else {
                         reqcache.lookup(
                                 std::move(jreq),
-                                [res, id = std::move(id), &server](const ReqCache::item* item) {
+                                [rd, id = std::move(id), &server](const ReqCache::item* item) {
                                     if (!item) {
                                         server.send_response(
-                                                res,
+                                                rd,
                                                 "Unable to process request: upstream RPC provider "
                                                 "returned an error",
                                                 {},
@@ -177,7 +191,7 @@ int main(int argc, char** argv) {
                                     }
                                     auto result = item->result;
                                     result["id"] = id;
-                                    server.send_json_response(res, std::move(result));
+                                    server.send_json_response(rd, std::move(result));
                                 });
                     }
                 } catch (const std::exception& e) {
@@ -185,9 +199,9 @@ int main(int argc, char** argv) {
                             cat,
                             "Error while processing jsonrpc request: {}. Request was:\n{}",
                             e.what(),
-                            req.body);
+                            rd->body);
                     server.send_response(
-                            res,
+                            rd,
                             "An error occured while processing your request",
                             {},
                             "500 Internal Server Error");

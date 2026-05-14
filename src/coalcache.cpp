@@ -84,9 +84,17 @@ void CoalCache::clean_cache() {
 
 void CoalCache::lookup(const std::string& k, item_callback cb) {
     {
-        std::lock_guard lock{cache_mut};
-        if (auto it = cache.find(k); it != cache.end()) {
-            cb(&it->second);
+        // Copy the item out under the lock and invoke the callback without holding it: cb may
+        // synchronously dispatch a response (and end up doing socket I/O on the uWS thread),
+        // which we don't want to do while holding cache_mut.
+        std::optional<item> hit;
+        {
+            std::lock_guard lock{cache_mut};
+            if (auto it = cache.find(k); it != cache.end())
+                hit = it->second;
+        }
+        if (hit) {
+            cb(&*hit);
             return;
         }
     }

@@ -25,11 +25,12 @@ static std::string lc_string(std::string_view x) {
     return y;
 }
 
-req_data::req_data(uWS::HttpRequest& req, HttpResponse& res) :
+req_data::req_data(uWS::HttpRequest& req, HttpResponse& response) :
+        res{&response},
         method{req.getCaseSensitiveMethod()},
         full_url{req.getFullUrl()},
         url{req.getUrl()},
-        remote_addr{res.getRemoteAddressAsText()} {
+        remote_addr{res->getRemoteAddressAsText()} {
     for (const auto& [header, value] : req)
         headers.emplace(lc_string(header), value);
 }
@@ -49,8 +50,10 @@ void Server::run() {
 
         log::debug(cat, "Incoming request initiated for {} from {}", rd->full_url, rd->remote_addr);
         res->onAborted([rd] { rd->_aborted = true; });
-        res->onData([this, res, rd = std::move(rd)](std::string_view chunk, bool fin) mutable {
-            log::debug(cat, "Incoming {} chunk of size {}, rd {}", fin ? "final" : "non-final", chunk.size(), rd ? "good" : "EMPTY");
+        res->onData([this, rd](std::string_view chunk, bool fin) {
+            log::debug(cat, "Incoming {} chunk of size {}", fin ? "final" : "non-final", chunk.size());
+            if (rd->_aborted)
+                return;
             if (!chunk.empty())
                 rd->body += chunk;
 
@@ -63,9 +66,8 @@ void Server::run() {
                     rd->full_url,
                     rd->remote_addr);
 
-            if (fin && !rd->_aborted) {
-                handler(std::move(*rd), res);
-            }
+            if (fin)
+                handler(rd);
         });
     });
 
@@ -80,7 +82,7 @@ void Server::run() {
 }
 
 void Server::send_json_response(
-        HttpResponse* r,
+        std::shared_ptr<req_data> rd,
         nlohmann::json response,
         std::unordered_map<std::string, std::string> headers,
         std::string http_status,
@@ -90,34 +92,44 @@ void Server::send_json_response(
         headers["Content-Type"] = "application/json";
 
     return send_response_impl(
-            r, response.dump(), std::move(headers), std::move(http_status), force_close);
+            std::move(rd),
+            response.dump(),
+            std::move(headers),
+            std::move(http_status),
+            force_close);
 }
 
 void Server::send_response(
-        HttpResponse* r,
+        std::shared_ptr<req_data> rd,
         std::string response,
         std::unordered_map<std::string, std::string> headers,
         std::string http_status,
         bool force_close) {
-    app.getLoop()->defer([this,
-                          r,
-                          response = std::move(response),
-                          headers = std::move(headers),
-                          http_status = std::move(http_status),
-                          force_close]() mutable {
-        send_response_impl(
-                r, std::move(response), std::move(headers), std::move(http_status), force_close);
-    });
+    send_response_impl(
+            std::move(rd),
+            std::move(response),
+            std::move(headers),
+            std::move(http_status),
+            force_close);
 }
 
 void Server::send_response_impl(
-        HttpResponse* r,
+        std::shared_ptr<req_data> rd,
         std::string response,
         std::unordered_map<std::string, std::string> headers,
         std::string http_status,
         bool force_close,
         bool _loop) {
     if (std::this_thread::get_id() == tid) {
+        // We're on the uWS loop thread, which is also where onAborted runs, so this check and
+        // the subsequent res-> calls are serialized with any abort that has happened or could
+        // happen up to this point.  After abort the HttpResponse is freed by uWS, so we must
+        // not touch `res`.
+        if (rd->_aborted) {
+            log::debug(cat, "Dropping response for aborted request from {}", rd->remote_addr);
+            return;
+        }
+        auto* r = rd->res;
         r->cork([r,
                  response = std::move(response),
                  headers = std::move(headers),
@@ -138,19 +150,19 @@ void Server::send_response_impl(
     // Otherwise we're not in the uWS thread, so we have to recall ourself through the thread-safe
     // loop defer() method.
     if (_loop) {
-        // If we get here somehow then we *did* queue via defer but someone end up still not in the
-        // proper uWS thread and something is seriously wrong.
+        // If we get here somehow then we *did* queue via defer but somehow ended up still not in
+        // the proper uWS thread and something is seriously wrong.
         log::critical(cat, "response queue loop detected, dropping response!");
         return;
     }
     app.getLoop()->defer([this,
-                          r,
+                          rd = std::move(rd),
                           response = std::move(response),
                           headers = std::move(headers),
                           http_status = std::move(http_status),
                           force_close]() mutable {
         send_response_impl(
-                r,
+                std::move(rd),
                 std::move(response),
                 std::move(headers),
                 std::move(http_status),
