@@ -5,9 +5,9 @@
 
 #include <chrono>
 #include <memory>
-#include <nlohmann/json_fwd.hpp>
 #include <oxen/quic/loop.hpp>
 #include <unordered_set>
+#include <vector>
 
 using namespace std::literals;
 
@@ -15,7 +15,7 @@ namespace solcache {
 
 class Client {
   public:
-    Client(std::string upstream_url, std::chrono::milliseconds upstream_timeout = 10s);
+    explicit Client(std::chrono::milliseconds upstream_timeout = 10s);
 
     ~Client();
 
@@ -24,13 +24,15 @@ class Client {
     using response_handler_t = std::function<void(
             int status, std::unordered_map<std::string, std::string> headers, std::string body)>;
 
-    void request(const nlohmann::json& body, response_handler_t response_handler);
-
-    // Same as above, but takes a pre-dumped json body (unchecked):
-    void request_jsonrpc(std::string predumped_jsonrpc, response_handler_t response_handler);
+    // POST `body` to an arbitrary upstream URL with optional extra headers (e.g. provider auth).
+    // The body is sent verbatim with a JSON content type.  This is the only forwarding primitive;
+    // callers (ProxyCache, CoalCache, ReqCache) supply the per-request upstream URL.
+    void post(std::string url,
+              std::string body,
+              std::vector<std::string> extra_headers,
+              response_handler_t response_handler);
 
   private:
-    const std::string upstream_url;
     const std::chrono::milliseconds upstream_timeout;
 
     event* ev_timeout;

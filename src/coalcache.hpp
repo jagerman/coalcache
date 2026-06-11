@@ -1,7 +1,6 @@
 #pragma once
 #include <sodium/crypto_generichash_blake2b.h>
 
-#include <array>
 #include <chrono>
 #include <mutex>
 #include <nlohmann/json.hpp>
@@ -70,6 +69,7 @@ class CoalCache {
   private:
     Client& client;
     oxen::quic::Loop& loop{client.loop};
+    const std::string upstream;  // upstream RPC URL we forward coalesced requests to
 
     const std::chrono::milliseconds coalesce_time;
     const std::chrono::milliseconds positive_cache_time;
@@ -116,6 +116,7 @@ class CoalCache {
     // failed requests are never cached).
     CoalCache(
             Client& client,
+            std::string upstream,
             std::chrono::milliseconds coalesce_time,
             size_t max_coalesce,
             std::chrono::milliseconds positive_cache_time,

@@ -2,8 +2,6 @@
 
 #include <fmt/core.h>
 
-#include <exception>
-#include <future>
 #include <nlohmann/json.hpp>
 #include <oxen/log.hpp>
 #include <oxen/log/format.hpp>
@@ -45,7 +43,9 @@ void Server::run() {
 
     tid = std::this_thread::get_id();
 
-    app.post("/", [this](HttpResponse* res, uWS::HttpRequest* req) {
+    // Catch-all POST: the handler routes by path itself (legacy Solana mode ignores the path; the
+    // proxy/config mode longest-prefix-matches it).  "/*" is a superset of the old "/".
+    app.post("/*", [this](HttpResponse* res, uWS::HttpRequest* req) {
         auto rd = std::make_shared<req_data>(*req, *res);
 
         log::debug(cat, "Incoming request initiated for {} from {}", rd->full_url, rd->remote_addr);

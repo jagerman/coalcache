@@ -1,11 +1,9 @@
 #pragma once
 
-#include <array>
 #include <chrono>
 #include <list>
 #include <nlohmann/json.hpp>
 #include <unordered_map>
-#include <variant>
 
 #include "client.hpp"
 
@@ -34,6 +32,7 @@ class ReqCache {
   private:
     Client& client;
     oxen::quic::Loop& loop{client.loop};
+    const std::string upstream;  // upstream RPC URL we forward cache misses to
 
     std::unordered_map<std::string, item> cache;
 
@@ -43,7 +42,7 @@ class ReqCache {
     void clean_cache();
 
   public:
-    ReqCache(Client& c, std::chrono::milliseconds cache_expiry);
+    ReqCache(Client& c, std::string upstream, std::chrono::milliseconds cache_expiry);
 
     // Initiates a cached upstream request for the given json rpc request.  If found in the cache
     // the callback is invoked immediately, otherwise the request is initiated and the callback

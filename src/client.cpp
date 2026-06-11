@@ -1,7 +1,6 @@
 #include "client.hpp"
 
 #include <chrono>
-#include <nlohmann/json.hpp>
 #include <oxen/log.hpp>
 
 namespace solcache {
@@ -20,6 +19,7 @@ namespace {
 
     struct req_data {
         Client::response_handler_t response_handler;
+        std::string url;
         std::string req_body;
         std::string resp_body;
         curl_slist* headers = nullptr;
@@ -32,8 +32,7 @@ namespace {
 
 }  // namespace
 
-Client::Client(std::string upstream_url, std::chrono::milliseconds upstream_timeout) :
-        upstream_url{std::move(upstream_url)},
+Client::Client(std::chrono::milliseconds upstream_timeout) :
         upstream_timeout{upstream_timeout},
         ev_timeout{evtimer_new(loop.get_event_base(), Client::on_timeout_c, this)} {
 
@@ -198,27 +197,36 @@ void Client::check_multi_info() {
     }
 }
 
-void Client::request_jsonrpc(std::string predumped_jsonrpc, response_handler_t response_handler) {
+void Client::post(
+        std::string url,
+        std::string body,
+        std::vector<std::string> extra_headers,
+        response_handler_t response_handler) {
 
     log::debug(cat, "request called");
-    auto* rd = new req_data{std::move(response_handler), std::move(predumped_jsonrpc), ""s};
+    auto* rd = new req_data{};
+    rd->response_handler = std::move(response_handler);
+    rd->url = std::move(url);
+    rd->req_body = std::move(body);
+
+    // Build the header list now: this is just a linked-list of strings and touches neither the
+    // curl-multi handle nor the loop, so there's no need to defer it to the loop thread.
+    for (const char* header : {"Content-Type: application/json", "User-Agent: coalcache/0"})
+        rd->headers = curl_slist_append(rd->headers, header);
+    for (const auto& header : extra_headers)
+        rd->headers = curl_slist_append(rd->headers, header.c_str());
 
     loop.call([this, rd]() mutable {
-        log::debug(cat, "initiating request to {}", upstream_url);
+        log::debug(cat, "initiating request to {}", rd->url);
         CURL* handle = curl_easy_init();
         curl_easy_setopt(handle, CURLOPT_NOPROGRESS, 1);
         curl_easy_setopt(handle, CURLOPT_TCP_KEEPALIVE, 1);
         curl_easy_setopt(handle, CURLOPT_ACCEPT_ENCODING, "");
         curl_easy_setopt(handle, CURLOPT_POST, 1);
         curl_easy_setopt(handle, CURLOPT_TIMEOUT_MS, upstream_timeout.count());
-        curl_easy_setopt(handle, CURLOPT_URL, upstream_url.c_str());
+        curl_easy_setopt(handle, CURLOPT_URL, rd->url.c_str());
         curl_easy_setopt(handle, CURLOPT_PRIVATE, rd);
 
-        for (auto& header : {
-                     "Content-Type: application/json",
-                     "User-Agent: coalcache/0",
-             })
-            rd->headers = curl_slist_append(rd->headers, header);
         curl_easy_setopt(handle, CURLOPT_HTTPHEADER, rd->headers);
 
         curl_easy_setopt(handle, CURLOPT_POSTFIELDSIZE, rd->req_body.size());
@@ -229,11 +237,6 @@ void Client::request_jsonrpc(std::string predumped_jsonrpc, response_handler_t r
 
         curl_multi_add_handle(curl_multi, handle);
     });
-}
-
-void Client::request(const nlohmann::json& body, response_handler_t response_handler) {
-
-    return request_jsonrpc(body.dump(), std::move(response_handler));
 }
 
 }  // namespace solcache

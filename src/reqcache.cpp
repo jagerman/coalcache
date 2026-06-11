@@ -10,8 +10,9 @@ namespace solcache {
 namespace log = oxen::log;
 auto cat = log::Cat("reqcache");
 
-ReqCache::ReqCache(Client& c, std::chrono::milliseconds cache_expiry) :
+ReqCache::ReqCache(Client& c, std::string upstream, std::chrono::milliseconds cache_expiry) :
         client{c},
+        upstream{std::move(upstream)},
         cache_expiry{cache_expiry},
 
         cache_clean_timer{loop.call_every(1s, [this] { clean_cache(); })} {}
@@ -53,8 +54,10 @@ void ReqCache::lookup(nlohmann::json jsonrpc, item_callback cb, std::string_view
             return;
         item._sent = true;
 
-        client.request_jsonrpc(
+        client.post(
+                upstream,
                 std::move(body),
+                {},
                 [this, cache_key = std::move(cache_key)](
                         int status,
                         std::unordered_map<std::string, std::string> headers,

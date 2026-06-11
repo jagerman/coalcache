@@ -68,6 +68,6 @@ add_subdirectory(libquic)
 
 pkg_check_modules(SODIUM REQUIRED IMPORTED_TARGET libsodium)
 
-add_executable(solcache src/solcache.cpp src/client.cpp src/server.cpp src/coalcache.cpp src/reqcache.cpp)
-target_link_libraries(solcache PRIVATE
+add_executable(coalcache src/main.cpp src/client.cpp src/server.cpp src/coalcache.cpp src/reqcache.cpp src/proxycache.cpp src/routes.cpp src/config.cpp)
+target_link_libraries(coalcache PRIVATE
     CLI11::CLI11 CURL::libcurl uWebSockets nlohmann_json::nlohmann_json fmt::fmt quic PkgConfig::SODIUM)

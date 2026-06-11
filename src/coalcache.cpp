@@ -1,7 +1,6 @@
 #include "coalcache.hpp"
 
 #include <chrono>
-#include <iterator>
 #include <mutex>
 #include <oxen/log.hpp>
 #include <oxen/log/format.hpp>
@@ -57,11 +56,13 @@ void CoalCache::item::load(const nlohmann::json& value) {
 
 CoalCache::CoalCache(
         Client& client,
+        std::string upstream,
         std::chrono::milliseconds coalesce_time,
         size_t max_coalesce,
         std::chrono::milliseconds positive_cache_time,
         std::chrono::milliseconds negative_cache_time) :
         client{client},
+        upstream{std::move(upstream)},
         coalesce_time{coalesce_time},
         positive_cache_time{positive_cache_time},
         negative_cache_time{negative_cache_time},
@@ -154,8 +155,10 @@ void CoalCache::send_coalesced() {
 
     params.push_back(nlohmann::json{{"searchTransactionHistory", true}});
 
-    client.request(
-            req,
+    client.post(
+            upstream,
+            req.dump(),
+            {},
             [this, keys = std::move(keys)](
                     int status,
                     std::unordered_map<std::string, std::string> headers,
