@@ -2,12 +2,34 @@
 
 #include <chrono>
 #include <nlohmann/json.hpp>
+#include <oxen/log.hpp>
+#include <oxen/log/format.hpp>
+#include <unordered_set>
 
 using namespace std::chrono_literals;
+using namespace oxen::log::literals;
 
 namespace solcache {
 
+namespace log = oxen::log;
+static auto cat = log::Cat("routes");
+
 namespace {
+
+    // Warn — once per distinct (surface, method) — about a method we have no explicit caching
+    // policy for, so an operator notices it and decides whether it should be cached or stay
+    // passthrough.  classify() runs only on the single uWS handler thread, so the dedup set needs
+    // no lock.
+    void warn_unrecognized(std::string_view surface, std::string_view method) {
+        static std::unordered_set<std::string> seen;
+        if (seen.emplace("{}:{}"_format(surface, method)).second)
+            log::warning(
+                    cat,
+                    "No caching policy for {} method '{}'; passing through.  Decide whether it "
+                    "should be cached and add it to the appropriate list in routes.cpp.",
+                    surface,
+                    method);
+    }
 
     // Default cache lifetimes.  Block-pinned / immutable data never changes, so its TTL is bounded
     // only by memory (see ProxyCache stale-grace) — kept long to maximise the hit rate, which for
@@ -61,6 +83,31 @@ namespace {
         }
     }
 
+    // Methods the Chainflip engine issues on the EVM JSON-RPC surface that are deliberately *not*
+    // cached: current-state contract reads (eth_call — address checker, Arbitrum node interface),
+    // the shared broadcaster's nonce (eth_getTransactionCount), fee/gas queries, balances, and
+    // writes (eth_sendRawTransaction).  Listed explicitly so an unrecognized method warns instead
+    // of silently passing through.
+    const std::unordered_set<std::string_view> jsonrpc_passthrough = {
+            "eth_call",
+            "eth_estimateGas",
+            "eth_feeHistory",
+            "eth_gasPrice",
+            "eth_maxPriorityFeePerGas",
+            "eth_getTransactionCount",
+            "eth_getBalance",
+            "eth_sendRawTransaction",
+    };
+
+    // Likewise for the java-tron native wallet API: simulations (triggerconstantcontract,
+    // estimateenergy), and writes (triggersmartcontract, broadcasttransaction).
+    const std::unordered_set<std::string_view> wallet_passthrough = {
+            "triggerconstantcontract",
+            "triggersmartcontract",
+            "estimateenergy",
+            "broadcasttransaction",
+    };
+
     Disposition classify_jsonrpc(const std::string& body) {
         Disposition d;
         std::string method;
@@ -97,7 +144,12 @@ namespace {
             cache_with(const_ttl(head ? TTL_HEAD : TTL_IMMUTABLE));
         } else if (method == "eth_getTransactionReceipt")
             cache_with(ttl_if_result_present(TTL_IMMUTABLE));
-        // else: eth_estimateGas / eth_feeHistory / unknown -> pass through
+        // Current-state reads, fee/gas queries, simulations and writes — must never be cached.
+        // (eth_getTransactionCount in particular: caching a shared broadcaster's pending nonce
+        // would manufacture nonce collisions.)  Anything outside both lists is unexpected on this
+        // surface: pass it through but warn so we revisit whether it should be cached.
+        else if (!method.empty() && !jsonrpc_passthrough.contains(method))
+            warn_unrecognized("evm_jsonrpc", method);
         return d;
     }
 
@@ -118,8 +170,8 @@ namespace {
             cache_with(const_ttl(TTL_IMMUTABLE));  // the historical/archive call
         else if (method == "gettransactionbyid" || method == "gettransactioninfobyid")
             cache_with(ttl_if_nonempty(TTL_IMMUTABLE));
-        // triggerconstantcontract / estimateenergy (current-state sims) and triggersmartcontract /
-        // broadcasttransaction (writes) and anything unknown -> pass through
+        else if (!method.empty() && !wallet_passthrough.contains(method))
+            warn_unrecognized("tron_wallet", method);
         return d;
     }
 
