@@ -4,10 +4,12 @@
 Exists solely to hold and move the TRX a Chainflip broadcaster wallet needs to
 cover (and be reimbursed for) energy/bandwidth fees.  No tokens, no frills.
 
-The private key is taken from the TRON_PRIVATE_KEY environment variable (64 hex
-chars, optional 0x prefix) if set; otherwise, if the optional 'keyring' package
-is installed and a secret store is available (gnome-keyring / KDE Wallet / macOS
-Keychain), it is read from there.  Store it once with `store-key`.
+The private key comes from the TRON_PRIVATE_KEY environment variable, which may
+be either the hex key itself (optional 0x prefix) or a path to a file containing
+it (e.g. a Chainflip keys/ethereum_key_file).  If unset, and the optional
+'keyring' package is installed with a secret store available (gnome-keyring /
+KDE Wallet / macOS Keychain), the key is read from there instead — store it once
+with `store-key`.
 
 Talks to the coalcache TRON route at http://10.25.0.2/tron by default; override
 with TRON_NODE (give the /tron base, not /tron/wallet — tronpy appends the
@@ -20,7 +22,8 @@ Examples:
     ./tronwallet.py balance                      # key from keyring (or env var)
     ./tronwallet.py send T<dest> 12.5
     ./tronwallet.py send T<dest> --all
-    TRON_PRIVATE_KEY=abc123... ./tronwallet.py balance   # env var overrides keyring
+    TRON_PRIVATE_KEY=abc123... ./tronwallet.py balance               # raw hex key
+    TRON_PRIVATE_KEY=/etc/chainflip/cliff-swallow/keys/ethereum_key_file ./tronwallet.py balance
 
 Sends ask for confirmation unless -y/--yes is given.  Real funds: there is no undo.
 """
@@ -98,9 +101,21 @@ def keyring_get():
 def load_key():
     env = os.environ.get("TRON_PRIVATE_KEY")
     if env:
+        env = env.strip()
+        # TRON_PRIVATE_KEY may be the hex key itself, or a path to a file holding
+        # it.  Treat it as a path if it looks like one (contains a separator or ~)
+        # or actually resolves to a file; a raw hex key is pure hex and won't.
+        path = os.path.expanduser(env)
+        src = "TRON_PRIVATE_KEY"
+        if "/" in env or env.startswith("~") or os.path.isfile(path):
+            try:
+                env = open(path).read()
+            except OSError as e:
+                die(f"TRON_PRIVATE_KEY looks like a path but the file can't be read: {e}")
+            src = f"key file {path}"
         priv = parse_key(env)
         if priv is None:
-            die("invalid TRON_PRIVATE_KEY (expected 64 hex chars)")
+            die(f"invalid private key from {src} (expected 64 hex chars)")
         return priv
 
     stored = keyring_get()
