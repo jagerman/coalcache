@@ -160,15 +160,39 @@ int Client::handle_socket_c(
     return 0;
 }
 
+// Strips the URL path (which for our providers is a secret API-key segment) so upstream URLs can
+// be logged without leaking credentials — keeps scheme://host and drops the rest.
+static std::string redact_url(const std::string& url) {
+    auto scheme = url.find("://");
+    auto host = scheme == std::string::npos ? 0 : scheme + 3;
+    auto path = url.find('/', host);
+    return path == std::string::npos ? url : url.substr(0, path) + "/…";
+}
+
 void Client::check_multi_info() {
     int pending;
     while (CURLMsg* message = curl_multi_info_read(curl_multi, &pending)) {
         if (message->msg == CURLMSG_DONE) {
             CURL* e = message->easy_handle;
+            CURLcode result = message->data.result;
 
             req_data* rd = nullptr;
             curl_easy_getinfo(e, CURLINFO_PRIVATE, &rd);
             if (rd) {
+                // Transport-level failures (timeout, connection refused, DNS, TLS) surface via the
+                // CURLcode, not the HTTP status — CURLINFO_RESPONSE_CODE is 0 for these, so without
+                // this an upstream timeout reaches the caches as a bare "status 0".  Log it with the
+                // (credential-redacted) URL and how long we waited so it's legible at info level.
+                if (result != CURLE_OK) {
+                    double secs = 0;
+                    curl_easy_getinfo(e, CURLINFO_TOTAL_TIME, &secs);
+                    log::warning(
+                            cat,
+                            "upstream request to {} failed after {:.3f}s: {}",
+                            redact_url(rd->url),
+                            secs,
+                            curl_easy_strerror(result));
+                }
                 if (rd->response_handler) {
                     try {
                         std::unordered_map<std::string, std::string> headers;
@@ -217,7 +241,7 @@ void Client::post(
         rd->headers = curl_slist_append(rd->headers, header.c_str());
 
     loop.call([this, rd]() mutable {
-        log::debug(cat, "initiating request to {}", rd->url);
+        log::debug(cat, "initiating request to {}", redact_url(rd->url));
         CURL* handle = curl_easy_init();
         curl_easy_setopt(handle, CURLOPT_NOPROGRESS, 1);
         curl_easy_setopt(handle, CURLOPT_TCP_KEEPALIVE, 1);
