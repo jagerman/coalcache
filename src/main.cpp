@@ -188,6 +188,15 @@ int main(int argc, char** argv) {
             "(solana routes) How long, in ms, we cache not-found signature-status results; 0 or "
             "negative to never cache them.");
 
+    int upstream_timeout = 3000;
+    app.add_option(
+            "-t,--upstream-timeout",
+            upstream_timeout,
+            "How long, in ms, to wait for an upstream provider to respond before giving up "
+            "(all routes).  Independent of cache TTLs: a successful response is still cached for "
+            "the full cache time.  Set this below the clients' own RPC timeout so that a hung "
+            "upstream yields a prompt error the client can act on rather than a dropped request.");
+
     std::string loglevel = "info";
     app.add_option(
                "-L,--log-level",
@@ -223,7 +232,7 @@ int main(int argc, char** argv) {
     for (const auto& r : config.routes)
         log::info(cat, "route {} -> {} ({})", r.prefix, r.upstream, to_string(r.kind));
 
-    Client client{};
+    Client client{upstream_timeout * 1ms};
     ProxyCache proxy{client};  // shared by all proxy-kind routes (URL is supplied per fetch)
 
     // Solana routes each get their own coalescer + request cache, bound to the route's upstream.
