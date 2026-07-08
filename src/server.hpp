@@ -3,6 +3,7 @@
 #include <uWebSockets/App.h>
 
 #include <atomic>
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <nlohmann/json_fwd.hpp>
@@ -22,6 +23,9 @@ struct req_data {
     // uWS loop thread immediately before touching `res`.  Atomic so other threads can do a
     // best-effort short-circuit check, but the authoritative check must be on the uWS thread.
     std::atomic<bool> _aborted = false;
+
+    // When this request arrived, for measuring how long until it aborts or gets a response.
+    std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
 
     std::string method;
     std::string full_url, url;

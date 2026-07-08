@@ -31,6 +31,15 @@ req_data::req_data(uWS::HttpRequest& req, HttpResponse& response) :
         remote_addr{res->getRemoteAddressAsText()} {
     for (const auto& [header, value] : req)
         headers.emplace(lc_string(header), value);
+
+    // If a reverse proxy forwarded the real client address, prefer it over the socket peer (which
+    // would otherwise just be the proxy, e.g. 127.0.0.1).  Safe to trust because we sit on
+    // localhost behind nginx, which sets these headers itself, overwriting anything a client sent.
+    if (auto it = headers.find("x-real-ip"); it != headers.end() && !it->second.empty())
+        remote_addr = it->second;
+    else if (auto fwd = headers.find("x-forwarded-for");
+             fwd != headers.end() && !fwd->second.empty())
+        remote_addr = fwd->second.substr(0, fwd->second.find(','));
 }
 
 std::optional<std::string_view> req_data::content_type() const {
@@ -49,7 +58,13 @@ void Server::run() {
         auto rd = std::make_shared<req_data>(*req, *res);
 
         log::debug(cat, "Incoming request initiated for {} from {}", rd->full_url, rd->remote_addr);
-        res->onAborted([rd] { rd->_aborted = true; });
+        res->onAborted([rd] {
+            rd->_aborted = true;
+            auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                              std::chrono::steady_clock::now() - rd->start)
+                              .count();
+            log::debug(cat, "Request from {} aborted by client {}ms after arrival", rd->remote_addr, ms);
+        });
         res->onData([this, rd](std::string_view chunk, bool fin) {
             log::debug(cat, "Incoming {} chunk of size {}", fin ? "final" : "non-final", chunk.size());
             if (rd->_aborted)
@@ -126,7 +141,14 @@ void Server::send_response_impl(
         // happen up to this point.  After abort the HttpResponse is freed by uWS, so we must
         // not touch `res`.
         if (rd->_aborted) {
-            log::debug(cat, "Dropping response for aborted request from {}", rd->remote_addr);
+            auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                              std::chrono::steady_clock::now() - rd->start)
+                              .count();
+            log::debug(
+                    cat,
+                    "Dropping response for aborted request from {} ({}ms after arrival)",
+                    rd->remote_addr,
+                    ms);
             return;
         }
         auto* r = rd->res;
