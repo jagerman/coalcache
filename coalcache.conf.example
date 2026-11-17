@@ -1,0 +1,83 @@
+# Sample coalcache configuration.
+#
+# Copy this to /etc/coalcache.conf (the path coalcache.service uses), replace the upstream URLs and
+# API keys with your provider's, and uncomment the routes for the chains you need.  Each `route`
+# line adds one route; see README.md for the route syntax and for the other available options.
+#
+# Clients then use http://<listen-ip>:<port><prefix> in place of the provider's URL, e.g.
+# http://127.0.0.1:5014/eth for Ethereum.
+
+listen-ip = "127.0.0.1"
+port = 5014
+
+# Milliseconds to wait for an upstream response.  Keep this below your clients' own RPC timeout.
+upstream-timeout = 3000
+
+log-level = "info"
+
+
+## EVM chains
+
+# Ethereum
+route = "prefix=/eth; kind=evm_jsonrpc; upstream=https://ethereum-mainnet.provider.example/API_KEY"
+
+# Arbitrum One
+#route = "prefix=/arb; kind=evm_jsonrpc; upstream=https://arbitrum-mainnet.provider.example/API_KEY"
+
+# BNB Smart Chain
+route = "prefix=/bsc; kind=evm_jsonrpc; upstream=https://bsc-mainnet.provider.example/API_KEY"
+
+# Base
+#route = "prefix=/base; kind=evm_jsonrpc; upstream=https://base-mainnet.provider.example/API_KEY"
+
+# Optimism
+#route = "prefix=/op; kind=evm_jsonrpc; upstream=https://optimism-mainnet.provider.example/API_KEY"
+
+# Polygon PoS
+#route = "prefix=/polygon; kind=evm_jsonrpc; upstream=https://polygon-mainnet.provider.example/API_KEY"
+
+# Avalanche C-Chain (providers usually expose it under /ext/bc/C/rpc)
+#route = "prefix=/avax; kind=evm_jsonrpc; upstream=https://avalanche-mainnet.provider.example/API_KEY/ext/bc/C/rpc"
+
+# For a provider that takes its API key in a header rather than in the URL, use something like this
+# instead of the URL form above:
+#route = "prefix=/eth; kind=evm_jsonrpc; upstream=https://eth.provider.example; header=X-Api-Key: API_KEY"
+
+
+## Solana
+
+route = "prefix=/solana; kind=solana; upstream=https://solana-mainnet.provider.example/API_KEY"
+
+# Options for solana routes (the values shown are the defaults):
+#
+# Maximum number of getSignatureStatuses lookups to combine into one upstream request (0 disables
+# coalescing).  Solana's default limit is 256, but some providers' plans allow more or fewer.
+#sigstat-coalesce = 256
+# Maximum milliseconds to wait for more lookups before sending a combined request.
+#sigstat-wait = 3000
+# Milliseconds to cache results, and to cache not-found signature statuses.
+#cache-time = 15000
+#negative-cache-time = 5000
+
+
+## TRON
+#
+# TRON has two APIs: an Ethereum-style JSON-RPC interface and the native HTTP API under /wallet.
+# With these routes, clients use http://<listen-ip>:<port>/tron for JSON-RPC and /tron/wallet/...
+# for the native API (so tools that append wallet/... themselves, such as tronpy, are given /tron).
+
+route = "prefix=/tron; kind=evm_jsonrpc; upstream=https://tron-mainnet.provider.example/API_KEY/jsonrpc"
+route = "prefix=/tron/wallet; kind=tron_wallet; upstream=https://tron-mainnet.provider.example/API_KEY/wallet"
+
+# Historical balance lookups need a node with java-tron's storage.balance.history.lookup enabled,
+# which not every provider offers.  To send just that call to a different provider, add a more
+# specific route for it (tron-rpc-check.py tests whether a provider supports it):
+#route = "prefix=/tron/wallet/getblockbalance; kind=tron_wallet; upstream=https://tron-archive.provider.example/API_KEY/wallet/getblockbalance"
+
+
+## Other chains
+#
+# Chains without a caching policy can still go through a passthrough route, which keeps provider
+# URLs and credentials out of client configuration.  For example, a Bitcoin Core node using HTTP
+# basic authentication (the header value is base64 of "user:password"):
+#route = "prefix=/btc; kind=passthrough; upstream=http://10.0.0.5:8332; header=Authorization: Basic dXNlcjpwYXNzd29yZA=="

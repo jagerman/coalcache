@@ -120,7 +120,8 @@ and are not configurable.
 
 ### Config file
 
-Any option can be given in a config file using its long name.  Repeat `route` once per route:
+Any option can be given in a config file using its long name.  Repeat `route` once per route (a
+multi-line `route = [ ... ]` array is not supported):
 
 ```toml
 # coalcache.conf
@@ -136,6 +137,10 @@ route = "prefix=/eth; kind=evm_jsonrpc; upstream=https://eth.provider.example/KE
 ```
 
 Options given on the command line override the same option in the config file.
+
+`coalcache.conf.example` is a fuller, commented sample config, with example routes for Ethereum,
+Arbitrum, BNB Smart Chain, Base, Optimism, Polygon, Avalanche, Solana, TRON and a Bitcoin
+passthrough.
 
 ## Running
 
@@ -154,9 +159,26 @@ Then point your clients at coalcache instead of the provider, e.g. `http://10.0.
 `https://eth.provider.example/KEY`.  Because the provider URL and authentication headers live in
 coalcache's configuration, clients don't need the provider's API key.
 
-Logs go to stderr.  coalcache stays in the foreground, so run it under a service manager such as
-systemd for production use.  If it sits behind another reverse proxy, the client address it logs is
+Logs go to stderr.  If coalcache sits behind another reverse proxy, the client address it logs is
 taken from `X-Real-IP` or `X-Forwarded-For` when present.
+
+### As a systemd service
+
+coalcache stays in the foreground, so for production use run it under a service manager.  A sample
+systemd unit, `coalcache.service`, runs `/usr/local/bin/coalcache --config /etc/coalcache.conf` as
+the user `coalcache`:
+
+```sh
+sudo cp build/coalcache /usr/local/bin/
+sudo cp coalcache.conf.example /etc/coalcache.conf   # then edit it
+sudo useradd --system --no-create-home --shell /usr/sbin/nologin coalcache
+sudo cp coalcache.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now coalcache
+```
+
+Adjust the paths or user in the unit if yours differ, and uncomment `AmbientCapabilities` in it if
+you listen on a port below 1024.  Logs are then available through `journalctl -u coalcache`.
 
 coalcache does not do TLS or authentication on its listening socket: bind it to a private address,
 or put it behind a reverse proxy that handles those.
