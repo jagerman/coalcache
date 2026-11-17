@@ -13,12 +13,18 @@ auto cat = log::Cat("reqcache");
 ReqCache::ReqCache(Client& c, std::string upstream, std::chrono::milliseconds cache_expiry) :
         client{c},
         upstream{std::move(upstream)},
-        cache_expiry{cache_expiry},
+        cache_expiry{cache_expiry} {
+    jobs.add_timer(1s, [this] { clean_cache(); });
+}
 
-        cache_clean_timer{loop.call_every(1s, [this] { clean_cache(); })} {}
+ReqCache::~ReqCache() {
+    // Stop the queue before any members are destroyed, so its timers and queued jobs (which all
+    // reference this object) are dropped while they are still safe to drop.
+    jobs.stop();
+}
 
 void ReqCache::clean_cache() {
-    assert(loop.inside());
+    assert(jobs.inside());
 
     auto before = cache.size();
     log::debug(cat, "Cleaning ReqCache cache");
@@ -38,7 +44,7 @@ void ReqCache::lookup(nlohmann::json jsonrpc, item_callback cb, std::string_view
     std::string body = jsonrpc.dump();
     auto cache_key = hash(body, domain);
 
-    loop.call([this,
+    jobs.call([this,
                body = std::move(body),
                cache_key = std::move(cache_key),
                cb = std::move(cb)]() mutable {
@@ -62,7 +68,7 @@ void ReqCache::lookup(nlohmann::json jsonrpc, item_callback cb, std::string_view
                         int status,
                         std::unordered_map<std::string, std::string> headers,
                         std::string body) mutable {
-                    loop.call([this,
+                    jobs.call([this,
                                cache_key = std::move(cache_key),
                                status,
                                headers = std::move(headers),

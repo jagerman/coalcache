@@ -18,8 +18,15 @@ ProxyCache::ProxyCache(
         std::chrono::milliseconds clean_interval,
         std::chrono::milliseconds stale_grace) :
         client{client},
-        stale_grace{stale_grace},
-        cleaner{loop.call_every(clean_interval, [this] { clean(); })} {}
+        stale_grace{stale_grace} {
+    jobs.add_timer(clean_interval, [this] { clean(); });
+}
+
+ProxyCache::~ProxyCache() {
+    // Stop the queue before any members are destroyed, so its timers and queued jobs (which all
+    // reference this object) are dropped while they are still safe to drop.
+    jobs.stop();
+}
 
 std::string ProxyCache::hash(std::string_view key_body, std::string_view key_domain) {
     std::string out;
@@ -102,7 +109,7 @@ void ProxyCache::fetch(
         resp_cb cb) {
     auto key = hash(key_body, key_domain);
 
-    loop.call([this,
+    jobs.call([this,
                key = std::move(key),
                url = std::move(url),
                send_body = std::move(send_body),
@@ -138,7 +145,7 @@ void ProxyCache::fetch(
                     auto ct = content_type_of(resp_headers);
                     // The libcurl completion already runs on the loop thread, but bounce through
                     // the loop explicitly to be safe against any future transport change.
-                    loop.call([this, key, status, ct = std::move(ct), body = std::move(body)]() mutable {
+                    jobs.call([this, key, status, ct = std::move(ct), body = std::move(body)]() mutable {
                         on_response(key, status, std::move(ct), std::move(body));
                     });
                 });

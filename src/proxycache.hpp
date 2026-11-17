@@ -54,6 +54,8 @@ class ProxyCache {
             std::chrono::milliseconds clean_interval = std::chrono::seconds{1},
             std::chrono::milliseconds stale_grace = std::chrono::hours{1});
 
+    ~ProxyCache();
+
     // Serve `cb` from cache if a fresh entry exists; otherwise forward a POST of `send_body` (with
     // `headers`) to `url` and cache the result according to `ttl`.  Concurrent calls with the same
     // key coalesce onto a single upstream request.
@@ -72,7 +74,7 @@ class ProxyCache {
 
   private:
     Client& client;
-    oxen::quic::Loop& loop{client.loop};
+    oxen::quic::JobQueue jobs{client.loop};
     const std::chrono::milliseconds stale_grace;
 
     struct Entry {
@@ -85,7 +87,6 @@ class ProxyCache {
     };
 
     std::unordered_map<std::string, Entry> cache;
-    std::shared_ptr<oxen::quic::Ticker> cleaner;
 
     void clean();
     void on_response(

@@ -66,8 +66,15 @@ CoalCache::CoalCache(
         coalesce_time{coalesce_time},
         positive_cache_time{positive_cache_time},
         negative_cache_time{negative_cache_time},
-        max_coalesce{max_coalesce},
-        cache_clean_timer{loop.call_every(1s, [this] { clean_cache(); })} {}
+        max_coalesce{max_coalesce} {
+    jobs.add_timer(1s, [this] { clean_cache(); });
+}
+
+CoalCache::~CoalCache() {
+    // Stop the queue before any members are destroyed, so its timers and queued jobs (which all
+    // reference this object) are dropped while they are still safe to drop.
+    jobs.stop();
+}
 
 void CoalCache::clean_cache() {
     std::lock_guard lock{cache_mut};
@@ -100,7 +107,7 @@ void CoalCache::lookup(const std::string& k, item_callback cb) {
         }
     }
 
-    loop.call([this, k, cb = std::move(cb)]() mutable {
+    jobs.call([this, k, cb = std::move(cb)]() mutable {
         log::info(cat, "initiating CoalCache lookup for {}", k);
         if (auto it = q_sent.find(k); it != q_sent.end()) {
             it->second.push_back(std::move(cb));
@@ -108,7 +115,7 @@ void CoalCache::lookup(const std::string& k, item_callback cb) {
         }
 
         if (q_coalescing.empty())
-            loop.call_later(coalesce_time, [this, q_num = q_num] {
+            jobs.call_later(coalesce_time, [this, q_num = q_num] {
                 // If q_num has advanced then something already triggered the coalesced send,
                 // and so the timer is stale.
                 if (q_num == this->q_num)
@@ -123,8 +130,8 @@ void CoalCache::lookup(const std::string& k, item_callback cb) {
 }
 
 void CoalCache::send_coalesced() {
-    if (!loop.inside()) {
-        loop.call_soon([this] { send_coalesced(); });
+    if (!jobs.inside()) {
+        jobs.call_soon([this] { send_coalesced(); });
         return;
     }
 
@@ -163,7 +170,7 @@ void CoalCache::send_coalesced() {
                     int status,
                     std::unordered_map<std::string, std::string> headers,
                     std::string body) {
-                loop.call([this,
+                jobs.call([this,
                            status,
                            headers = std::move(headers),
                            body = std::move(body),

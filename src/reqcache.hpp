@@ -33,18 +33,18 @@ class ReqCache {
 
   private:
     Client& client;
-    oxen::quic::Loop& loop{client.loop};
+    oxen::quic::JobQueue jobs{client.loop};
     const std::string upstream;  // upstream RPC URL we forward cache misses to
 
     std::unordered_map<std::string, item> cache;
 
     const std::chrono::milliseconds cache_expiry;
 
-    std::shared_ptr<oxen::quic::Ticker> cache_clean_timer;
     void clean_cache();
 
   public:
     ReqCache(Client& c, std::string upstream, std::chrono::milliseconds cache_expiry);
+    ~ReqCache();
 
     // Initiates a cached upstream request for the given json rpc request.  If found in the cache
     // the callback is invoked immediately, otherwise the request is initiated and the callback

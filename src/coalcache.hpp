@@ -73,7 +73,7 @@ class CoalCache {
 
   private:
     Client& client;
-    oxen::quic::Loop& loop{client.loop};
+    oxen::quic::JobQueue jobs{client.loop};
     const std::string upstream;  // upstream RPC URL we forward coalesced requests to
 
     const std::chrono::milliseconds coalesce_time;
@@ -84,8 +84,6 @@ class CoalCache {
     mutable std::mutex cache_mut;
 
     void clean_cache();
-
-    std::shared_ptr<oxen::quic::Ticker> cache_clean_timer;
 
     // These are not explicitly mutex protected, but may only be touched inside the loop thread:
     std::unordered_map<std::string, std::list<item_callback>> q_coalescing;
@@ -126,6 +124,8 @@ class CoalCache {
             size_t max_coalesce,
             std::chrono::milliseconds positive_cache_time,
             std::chrono::milliseconds negative_cache_time);
+
+    ~CoalCache();
 
     // Looks up a key, calls the callback when the result is available.  callback *could* be called
     // immediately (before returning) if the key is in the cache, otherwise it queues the request
