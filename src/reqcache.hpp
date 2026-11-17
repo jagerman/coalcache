@@ -1,8 +1,10 @@
 #pragma once
 
 #include <chrono>
+#include <functional>
 #include <list>
 #include <nlohmann/json.hpp>
+#include <string>
 #include <unordered_map>
 
 #include "client.hpp"

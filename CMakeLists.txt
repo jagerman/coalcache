@@ -64,10 +64,10 @@ find_package(nlohmann_json REQUIRED)
 add_subdirectory(CLI11)
 
 set(FORCE_OXENC_SUBMODULE ON CACHE BOOL "")
-add_subdirectory(libquic)
+add_subdirectory(libquic EXCLUDE_FROM_ALL)
 
 pkg_check_modules(SODIUM REQUIRED IMPORTED_TARGET libsodium)
 
 add_executable(coalcache src/main.cpp src/client.cpp src/server.cpp src/coalcache.cpp src/reqcache.cpp src/proxycache.cpp src/routes.cpp src/config.cpp)
 target_link_libraries(coalcache PRIVATE
-    CLI11::CLI11 CURL::libcurl uWebSockets nlohmann_json::nlohmann_json fmt::fmt quic PkgConfig::SODIUM)
+    CLI11::CLI11 CURL::libcurl uWebSockets nlohmann_json::nlohmann_json fmt::fmt oxen::quic-event PkgConfig::SODIUM)

@@ -29,19 +29,17 @@ You need a C++20 compiler, CMake 3.18 or newer, and pkg-config, plus development
 - nlohmann-json
 - libsodium
 - zlib
-- the dependencies of [libquic](https://github.com/session-foundation/libquic): ngtcp2 (with its
-  GnuTLS crypto library), GnuTLS, nettle and libevent
+- libevent (for the event loop from [libquic](https://github.com/session-foundation/libquic);
+  coalcache uses only that part of libquic, so libquic's QUIC dependencies are not needed)
 
 On Debian or Ubuntu:
 
 ```sh
 sudo apt install build-essential cmake pkg-config git \
-    libcurl4-openssl-dev nlohmann-json3-dev libsodium-dev zlib1g-dev \
-    libngtcp2-dev libngtcp2-crypto-gnutls-dev libgnutls28-dev nettle-dev libevent-dev
+    libcurl4-openssl-dev nlohmann-json3-dev libsodium-dev zlib1g-dev libevent-dev
 ```
 
-If libquic can't find a suitable version of one of its dependencies, it downloads and builds that
-dependency statically.  Pass `-DBUILD_STATIC_DEPS=ON` to build all of them that way.
+If a suitable libevent isn't found, libquic downloads and builds it statically.
 
 uWebSockets, CLI11 and libquic are included as git submodules.
 
